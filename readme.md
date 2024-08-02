@@ -1,32 +1,92 @@
-# Desafio de Estimativa de Fretes
+## Análise Exploratória
 
-## Sobre o Dado
+Antes da implementação do código, foi realizada uma análise exploratória dos dados para compreender as características e padrões presentes. Analisei que os custos de frete apresentam uma sazonalidade significativa ao longo do ano, com valores mais altos em julho e mais baixos em junho.
 
-- A base de cotações **"freight_costs.csv"** contém um subset de cotações com origem no estado do Mato Grosso para múltiplos destinos.
-- A base de distâncias rodoviárias **"distances.csv"** contém um subset de distâncias com origem no estado do Mato Grosso para todos os demais municípios do Brasil.
-- A coluna **ID_CITY_ORIGIN** representa o município de origem e a coluna **ID_CITY_DESTINATION** representa o município de destino da carga presentes nas bases de cotações e distâncias. Os códigos dos municípios seguem o padrão do IBGE.
+## Abordagem e Implementação
 
-## Output 1
+Com base na análise exploratória, foi escolhido o modelo XGBoost para prever os valores futuros de frete. O código foi desenvolvido de maneira simples, sem a necessidade de implementação de classes. No entanto, uma melhoria futura seria separar o código em funções específicas, principalmente para ler e processar a lista de destinos e calcular as previsões de custo.
 
-Base de dados (formato CSV) histórica com as cotações de todos os municípios do Mato Grosso para os seguintes destinos: 1501303, 1506807, 3205309, 3548500, 4118204, 4207304, 4216206, 4315602.
+### Estrutura do Código
 
-Todos os municípios do Mato Grosso estão contidos na base de distâncias, isto é, são todos os valores únicos da coluna **ID_CITY_ORIGIN**.
+1. **Importação de Bibliotecas**
+   O código começa com a importação das bibliotecas necessárias:
+   ```python
+   import pandas as pd
+   from xgboost import XGBRegressor
+   from sklearn.model_selection import train_test_split
+   import matplotlib.pyplot as plt
+   import os
+   from itertools import product
+   ```
 
-## Output 2
+2. **Leitura e Preparação dos Dados**
+   Os arquivos CSV são lidos e processados:
+   ```python
+   parent_directory = os.path.dirname(os.path.abspath(__file__))
+   df_freight_costs = pd.read_csv(f'{parent_directory}/csv_files/freight_costs.csv', delimiter=';', decimal=',')
+   df_distances = pd.read_csv(f'{parent_directory}/csv_files/distances.csv', delimiter=';', decimal=',')
+   df_distances.dropna(inplace=True)
+   df_freight_costs.dropna(inplace=True)
+   df_freight_costs_distances = pd.merge(df_freight_costs, df_distances, on=['id_city_origin', 'id_city_destination'])
+   ```
 
-Base de dados (formato CSV) com as cotações estimadas para as próximas 52 semanas para esses mesmos trajetos.
+3. **Filtragem e Processamento dos Dados**
+   Filtragem dos destinos e preparação dos dados para o modelo:
+   ```python
+   destinations = [1501303, 1506807, 3205309, 3548500, 4118204, 4207304, 4216206, 4315602]
+   df_freight_costs_distances = df_freight_costs_distances[df_freight_costs_distances['id_city_destination'].isin(destinations)]
+   df_freight_costs_distances.to_csv(f'{parent_directory}/outputs/Output_1.csv')
+   df_freight_costs_distances['dt_reference'] = pd.to_datetime(df_freight_costs_distances['dt_reference'], format='%d/%m/%Y')
+   df_freight_costs_distances.set_index('dt_reference', inplace=True)
+   ```
 
-## Considerações Extras quanto à Avaliação do Desafio
+4. **Treinamento do Modelo e Previsões**
+   Treinamento do modelo XGBoost e realização das previsões:
+   ```python
+   list_forecast = []
+   for origin, destination in product(df_freight_costs_distances['id_city_origin'].unique(), destinations):
+       df_route = df_freight_costs_distances[(df_freight_costs_distances['id_city_origin'] == origin) & 
+                                             (df_freight_costs_distances['id_city_destination'] == destination)].sort_values(by='dt_reference')
+       if len(df_route) < 2:
+           continue
+       df_route['year'] = df_route.index.year
+       df_route['month'] = df_route.index.month
+       df_route['week'] = df_route.index.isocalendar().week
+       df_route['day'] = df_route.index.dayofweek
+       X = df_route[['year', 'month', 'week', 'day']]
+       y = df_route['freight_cost']
+       X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+       model = XGBRegressor(objective='reg:squarederror', eval_metric='rmse')
+       model.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=True)
+       y_pred = model.predict(X_test)
+       future_dates = pd.date_range(start=df_route.index[-1] + pd.Timedelta(weeks=1), periods=52, freq='W')
+       future_df = pd.DataFrame({'year': future_dates.year, 'month': future_dates.month, 'week': future_dates.isocalendar().week, 'day': future_dates.dayofweek}, index=future_dates)
+       future_forecast = model.predict(future_df)
+       list_forecast.append(pd.DataFrame(index=future_dates, data={'freight_cost': list(future_forecast), 'id_city_origin': [origin] * len(future_forecast), 'id_city_destination': [destination] * len(future_forecast)}))
+       plt.figure(figsize=(12, 6))
+       plt.plot(df_route.index, df_route['freight_cost'], label='Valor atual')
+       plt.plot(future_dates, future_forecast, label='Predição', color='red')
+       plt.title('Cotação atual x Cotação prevista')
+       plt.savefig(f'{parent_directory}/images/{origin}-{destination}.png')
+   df_forecast = pd.concat(list_forecast)
+   df_forecast.to_csv(f'{parent_directory}/outputs/Output_2.csv', index_label='dt_reference')
+   ```
 
-Ambos os desafios buscam avaliar a capacidade de resolução de problemas pelo candidato.
+### Observações Finais
 
-- **Tarefa de Expansão das Cotações:**
-  - Avalia a capacidade de construir pipelines/processos que sejam robustos e atualizáveis.
-  - Observa boas práticas de programação.
+- **Sazonalidade:** Observou-se sazonalidade significativa nos custos de frete, o que influenciou a escolha do modelo.
+- **Código e Melhoria:** O código é simples e direto, mas pode ser melhorado separando-o em funções específicas para modularizar a leitura de dados e a previsão de custos.
 
-- **Tarefa de Projeção:**
-  - Avalia o processo de modelagem matemática e raciocínio lógico.
-  - Não existe uma solução correta.
-  - Avaliaremos principalmente o uso de ferramentas e técnicas de modelagem matemática utilizadas e pela coerência das hipóteses admitidas.
+## Estrutura dos Diretórios
 
-Essas tarefas têm como objetivo observar a metodologia do candidato, a abordagem analítica e a habilidade em lidar com dados complexos de forma eficiente e precisa.
+- `csv_files/`: Contém os arquivos CSV de entrada.
+- `outputs/`: Contém os arquivos de saída gerados pelo código.
+- `images/`: Contém os gráficos gerados durante a execução do código.
+
+## Requisitos
+
+- `pandas`
+- `xgboost`
+- `scikit-learn`
+- `matplotlib`
+- `os`
