@@ -1,3 +1,7 @@
+## O DESENVOLVIMENTO ESTÁ EM src.py!!
+
+Aqui no readme, explico os passos que cheguei nas respostas.
+
 ## Análise Exploratória
 
 Antes da implementação do código, foi realizada uma análise exploratória dos dados para compreender as características e padrões presentes. Analisei que os custos de frete apresentam uma sazonalidade significativa ao longo do ano, com valores mais altos em julho e mais baixos em junho.
