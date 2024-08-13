@@ -4,7 +4,8 @@ Antes da implementação do código, foi realizada uma análise exploratória do
 
 ## Abordagem e Implementação
 
-Com base na análise exploratória, foi escolhido o modelo XGBoost para prever os valores futuros de frete. O código foi desenvolvido de maneira simples, sem a necessidade de implementação de classes. No entanto, uma melhoria futura seria separar o código em funções específicas, principalmente para ler e processar a lista de destinos e calcular as previsões de custo.
+Com base na análise exploratória, foi escolhido o modelo XGBoost para prever os valores futuros de frete. O código foi desenvolvido de maneira simples, sem a necessidade de implementação de classes. O carregamento das funções são realizadas através da AWS S3, para
+carga de arquivos não estruturados.
 
 ### Estrutura do Código
 
@@ -19,25 +20,28 @@ Com base na análise exploratória, foi escolhido o modelo XGBoost para prever o
    from itertools import product
    ```
 
-2. **Leitura e Preparação dos Dados**
-   Os arquivos CSV são lidos e processados:
-   ```python
-   parent_directory = os.path.dirname(os.path.abspath(__file__))
-   df_freight_costs = pd.read_csv(f'{parent_directory}/csv_files/freight_costs.csv', delimiter=';', decimal=',')
-   df_distances = pd.read_csv(f'{parent_directory}/csv_files/distances.csv', delimiter=';', decimal=',')
-   df_distances.dropna(inplace=True)
-   df_freight_costs.dropna(inplace=True)
-   df_freight_costs_distances = pd.merge(df_freight_costs, df_distances, on=['id_city_origin', 'id_city_destination'])
-   ```
-
+2. **Leitura e Preparação dos Dados a partir da leitura dos arquivos na AWS**
 3. **Filtragem e Processamento dos Dados**
    Filtragem dos destinos e preparação dos dados para o modelo:
    ```python
-   destinations = [1501303, 1506807, 3205309, 3548500, 4118204, 4207304, 4216206, 4315602]
-   df_freight_costs_distances = df_freight_costs_distances[df_freight_costs_distances['id_city_destination'].isin(destinations)]
-   df_freight_costs_distances.to_csv(f'{parent_directory}/outputs/Output_1.csv')
-   df_freight_costs_distances['dt_reference'] = pd.to_datetime(df_freight_costs_distances['dt_reference'], format='%d/%m/%Y')
-   df_freight_costs_distances.set_index('dt_reference', inplace=True)
+    # Unindo as bases de cotações e distâncias.
+    df_distances = df_distances.astype(float)
+    df_freight_costs_distances = pd.merge(df_freight_costs,
+                                        df_distances,
+                                        on=['id_city_origin', 'id_city_destination'])
+    
+    # Lista de destinos especificados
+    destinations = df_destinations['Destination'].values.astype(float).tolist()
+
+    # Filtrando as cotações para os destinos especificados.
+    df_freight_costs_distances = df_freight_costs_distances[df_freight_costs_distances['id_city_destination'].isin(destinations)]
+
+    # Salvando o arquivo csv e gerando o primeiro Output.
+    df_freight_costs_distances.to_csv(f'{parent_directory}/outputs/Output_1.csv')
+
+    # Convertendo as datas de string para TimeStamp da biblioteca Pandas.
+    df_freight_costs_distances['dt_reference'] = pd.to_datetime(df_freight_costs_distances['dt_reference'], format='%d/%m/%Y')
+    df_freight_costs_distances.set_index('dt_reference', inplace=True)
    ```
 
 4. **Treinamento do Modelo e Previsões**
